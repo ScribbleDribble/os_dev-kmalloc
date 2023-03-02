@@ -55,27 +55,16 @@ static block_header_t create_block_header(uint16_t size, bool is_allocated) {
     return bh;
 }
 
-// static block_t create_block(uint16_t size, bool is_free) {
-//     block_header_t start_bh = create_block_header(size, is_free);
-//     block_header_t end_bh = create_block_header(size, is_free);
-//     block_t block;
-//     block.bh_front = start_bh;
-//     block.bh_back = end_bh;
-
-//     return block;
-// }
-
 void* first_fit(uint32_t size){
     void* ptr = (void*) head;
     block_header_t* bh_ptr = (block_header_t*) head;
     while (bh_ptr->size != 0) {
-        // if (IS_VALID_BLOCK(bh_ptr, size)) {
-        //     return ((void*) ptr) + sizeof(block_header_t); 
-        // }
-        
-        // ptr +=  bh_ptr->size;
-        // bh_ptr = (block_header_t*) ptr;
-
+        if (IS_VALID_BLOCK(bh_ptr, size)) {
+            printf("Allocating memory at address 0x%x\n",(uint32_t) ((void*) ptr) + sizeof(block_header_t));
+            return ((void*) ptr) + sizeof(block_header_t); 
+        }
+        ptr +=  bh_ptr->size;
+        bh_ptr = (block_header_t*) ptr;
     } 
 }
 
@@ -89,12 +78,12 @@ void create_free_list(void* base_address) {
     int i;
     int end = PAGE_SIZE/DEFAULT_BLOCK_SIZE_BYTES;
     
+    head = (block_header_t*) base_address;
     void* ptr = base_address;
+    printf("%x\n", ((uint32_t) ptr));
+
     for (i = 0; i < end-1; i++) {
-        printf("%x\n", ((uint32_t) ptr*8 % 8) == 0);
         block_header_t bh_front = create_block_header(DEFAULT_BLOCK_SIZE_BYTES, true);
-        head = i == 0 ? &bh_front : head;
-        
         *(block_header_t*)ptr = bh_front;
         // advance to where the back block header should be
         ptr += DEFAULT_PAYLOAD_SIZE_BYTES + sizeof(block_header_t);
