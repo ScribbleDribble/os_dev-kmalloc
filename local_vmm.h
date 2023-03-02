@@ -9,7 +9,7 @@
     Block:
 
     -----------------------------
-    front block header (4 bytes)
+    front block header (4 bytes)                    
 
     -----------------------------
 
@@ -31,20 +31,20 @@ typedef struct block_header_t {
     uint32_t size : 29;
 }block_header_t;
 
-typedef struct block_t {
-    block_header_t bh_front;
-    block_header_t bh_back;
-    void* payload_ptr;
-}block_t;
-
 #define BLOCK_HEADER_SIZE sizeof(block_header_t)
 #define DEFAULT_BLOCK_SIZE_BYTES 16
 #define DEFAULT_PAYLOAD_SIZE_BYTES 8
 #define PAGE_SIZE 0x1000
+#define HEAP_START 0x50000
 
-#define IS_ALLOCATED(block_header) (block_header->status & 1) 
+#define ALLOCATED 1
+#define FREE 0 
+
+#define IS_ALLOCATED(block_header) (block_header->status & ALLOCATED) 
 #define IS_FITTING(block_header, requested_size) (requested_size > block_header->size - 2 * sizeof(block_header))
-#define IS_VALID_BLOCK(block_header, requested_size) (IS_ALLOCATED(block_header) && IS_FITTING(block_header, requested_size))
+#define IS_VALID_BLOCK(block_header, requested_size) (!IS_ALLOCATED(block_header) && IS_FITTING(block_header, requested_size))
+
+#define SET_ALLOCATED(block_header) (block_header->status = ALLOCATED)
 
 block_header_t* head;
 
@@ -60,6 +60,7 @@ void* first_fit(uint32_t size){
     block_header_t* bh_ptr = (block_header_t*) head;
     while (bh_ptr->size != 0) {
         if (IS_VALID_BLOCK(bh_ptr, size)) {
+            SET_ALLOCATED(bh_ptr);
             printf("Allocating memory at address 0x%x\n",(uint32_t) ((void*) ptr) + sizeof(block_header_t));
             return ((void*) ptr) + sizeof(block_header_t); 
         }
@@ -83,12 +84,12 @@ void create_free_list(void* base_address) {
     printf("%x\n", ((uint32_t) ptr));
 
     for (i = 0; i < end-1; i++) {
-        block_header_t bh_front = create_block_header(DEFAULT_BLOCK_SIZE_BYTES, true);
+        block_header_t bh_front = create_block_header(DEFAULT_BLOCK_SIZE_BYTES, FREE);
         *(block_header_t*)ptr = bh_front;
         // advance to where the back block header should be
         ptr += DEFAULT_PAYLOAD_SIZE_BYTES + sizeof(block_header_t);
         // printf("%u\n", (uint32_t) ptr);
-        block_header_t bh_back = create_block_header(DEFAULT_BLOCK_SIZE_BYTES, true);
+        block_header_t bh_back = create_block_header(DEFAULT_BLOCK_SIZE_BYTES, FREE);
         *(block_header_t*)ptr = bh_back;
 
         // advance to where the next front bh should be 
@@ -102,12 +103,11 @@ void create_free_list(void* base_address) {
     
 
 void init_heap() {
-    // get first page from kernel page table 
 
     // start addr of block of free memory
     int prot = PROT_READ | PROT_WRITE;
     int flags = MAP_PRIVATE | MAP_ANONYMOUS;
-    void* addr = (void*) mmap((void*) 0x50000, 0x1000, prot, flags, -1, 0);
+    void* addr = (void*) mmap((void*) HEAP_START, PAGE_SIZE, prot, flags, -1, 0);
     printf("%x heap start address\n", (uint32_t)addr);
     create_free_list(addr);
 }
