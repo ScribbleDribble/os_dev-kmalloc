@@ -1,57 +1,116 @@
-#include <stdio.h> 
+// #include <stdio.h> 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <sys/mman.h>
 
+/*
+
+    Block:
+
+    -----------------------------
+    front block header (4 bytes)
+
+    -----------------------------
+
+            payload 
+
+    -----------------------------
+    
+    padding (to make sure Block is 8-bit aligned in memory)
+
+    ------------------------------
+
+     back block header (4 bytes)
+    
+    ------------------------------
+*/
 
 typedef struct block_header_t {
-    uint32_t space : 3;
-    uint32_t block_size : 29;
+    uint32_t status : 3;
+    uint32_t size : 29;
 }block_header_t;
 
 typedef struct block_t {
     block_header_t bh_front;
-    block_header_t bh_end;
+    block_header_t bh_back;
     void* payload_ptr;
 }block_t;
 
+#define BLOCK_HEADER_SIZE sizeof(block_header_t)
 #define DEFAULT_BLOCK_SIZE_BYTES 16
+#define DEFAULT_PAYLOAD_SIZE_BYTES 8
 #define PAGE_SIZE 0x1000
 
-// 8-bit aligned bh 
-block_header_t root_bh;
+#define IS_ALLOCATED(block_header) (block_header->status & 1) 
+#define IS_FITTING(block_header, requested_size) (requested_size > block_header->size - 2 * sizeof(block_header))
+#define IS_VALID_BLOCK(block_header, requested_size) (IS_ALLOCATED(block_header) && IS_FITTING(block_header, requested_size))
 
+block_header_t* head;
 
-static block_header_t create_block_header(uint16_t block_size, bool is_free) {
+static block_header_t create_block_header(uint16_t size, bool is_allocated) {
     block_header_t bh;
-    bh.block_size = block_size;
-    bh.space = is_free;
+    bh.size = size;
+    bh.status = is_allocated;
     return bh;
 }
 
-static block_t create_block(uint16_t block_size, bool is_free) {
-    block_header_t start_bh = create_block_header(block_size, is_free);
-    block_header_t end_bh = create_block_header(block_size, is_free);
-    
-    block_t block;
-    block.bh_front = start_bh;
-    block.bh_end = end_bh;
+// static block_t create_block(uint16_t size, bool is_free) {
+//     block_header_t start_bh = create_block_header(size, is_free);
+//     block_header_t end_bh = create_block_header(size, is_free);
+//     block_t block;
+//     block.bh_front = start_bh;
+//     block.bh_back = end_bh;
 
-    printf("size of block: %luB\n", sizeof(block));
+//     return block;
+// }
 
-    return block;
-}
+void* first_fit(uint32_t size){
+    void* ptr = (void*) head;
+    block_header_t* bh_ptr = (block_header_t*) head;
+    while (bh_ptr->size != 0) {
+        // if (IS_VALID_BLOCK(bh_ptr, size)) {
+        //     return ((void*) ptr) + sizeof(block_header_t); 
+        // }
+        
+        // ptr +=  bh_ptr->size;
+        // bh_ptr = (block_header_t*) ptr;
 
-
-
-void first_fit(){
-    
+    } 
 }
 
 void* kmalloc(uint32_t size){
-
+    return first_fit(size);
 }
 
+
+
+void create_free_list(void* base_address) {
+    int i;
+    int end = PAGE_SIZE/DEFAULT_BLOCK_SIZE_BYTES;
+    
+    void* ptr = base_address;
+    for (i = 0; i < end-1; i++) {
+        printf("%x\n", ((uint32_t) ptr*8 % 8) == 0);
+        block_header_t bh_front = create_block_header(DEFAULT_BLOCK_SIZE_BYTES, true);
+        head = i == 0 ? &bh_front : head;
+        
+        *(block_header_t*)ptr = bh_front;
+        // advance to where the back block header should be
+        ptr += DEFAULT_PAYLOAD_SIZE_BYTES + sizeof(block_header_t);
+        // printf("%u\n", (uint32_t) ptr);
+        block_header_t bh_back = create_block_header(DEFAULT_BLOCK_SIZE_BYTES, true);
+        *(block_header_t*)ptr = bh_back;
+
+        // advance to where the next front bh should be 
+        ptr += sizeof(block_header_t);
+        
+    }
+    block_header_t list_tail_bh = create_block_header(0, true);
+    *(block_header_t*)ptr = list_tail_bh;
+
+}
+    
 
 void init_heap() {
     // get first page from kernel page table 
@@ -59,15 +118,7 @@ void init_heap() {
     // start addr of block of free memory
     int prot = PROT_READ | PROT_WRITE;
     int flags = MAP_PRIVATE | MAP_ANONYMOUS;
-    void* addr = (void*) mmap((void*) 0x1337, 0x1337, prot, flags, -1, 0);
-    
-    create_block(DEFAULT_BLOCK_SIZE_BYTES, true);
-}
-
-void create_free_list() {
-    int i;
-    int end = PAGE_SIZE/DEFAULT_BLOCK_SIZE_BYTES;
-    for (i = 0; i < end; i++) {
-        create_block(DEFAULT_BLOCK_SIZE_BYTES, true);
-    }
+    void* addr = (void*) mmap((void*) 0x50000, 0x1000, prot, flags, -1, 0);
+    printf("%x heap start address\n", (uint32_t)addr);
+    create_free_list(addr);
 }
