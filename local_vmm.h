@@ -74,7 +74,6 @@ void allocate_block(block_header_t* bh) {
 
 void free_block(block_header_t* bh) {
     SET_FREE(bh);
-    printf("clearing %x\n", ((void*)bh+BLOCK_HEADER_SIZE));
     memset((void*)bh+BLOCK_HEADER_SIZE, 0, GET_PAYLOAD_SIZE(bh));
     SET_FREE(JMP_TO_NEXT_BH(bh));
 }
@@ -99,27 +98,25 @@ void* first_fit(uint32_t size){
     printf("Unable to allocate memory of size %u\n", size); 
 }
 
-// check address inputs for memset. 
-
 void* kmalloc(uint32_t size){
     return first_fit(size);
 }
 
 // merges two blocks. 
-// params - bh: the 2nd front_bh of the two contingous blocks to be merged. 
-void merge_from_below(block_header_t* bh) {
-
+// params - bh: the 2nd front_bh of the two contingous blocks to be merged.
+// returns new bh_start of coalesced blocks. 
+block_header_t* merge_from_below(block_header_t* bh) {
+    block_header_t* new_bh_start;
     int new_block_size = bh->size + (bh-1)->size;
-
+    printf("new block size: %i\n", new_block_size);
     // go up one bh
     bh -= 1;
     void* ptr = bh;
-
     // jump to start of new block and clear old block headers
     ptr -= BLOCK_HEADER_SIZE + GET_PAYLOAD_SIZE(bh);
     memset(bh, 0, BLOCK_HEADER_SIZE*2);
-
-    // we're now at the front bh of newly coalesced block
+    // we're now at the front bh of newly coalesced block. we will return this address
+    new_bh_start = (block_header_t*) ptr;
     bh = (block_header_t *)ptr;
     bh->size = new_block_size; 
     bh->status = FREE;
@@ -132,61 +129,40 @@ void merge_from_below(block_header_t* bh) {
     bh->size = new_block_size; 
     bh->status = FREE;
 
+    return new_bh_start;
+
 }
 
-// need to understand why we're coalescing an already allocated block i.e. marking the block as unallocated
-
 void coalesce(block_header_t* bh) {
-
-    int new_block_size = 0;
-
+    printf("Coalescing initiator bh at : 0x%x\n", bh);
     // if the current block that has been free has a prev or next block free, then merge
-    
-    //
-    // bounds checking
     if (bh - 1 > head && (bh-1)->status == FREE) {
-        merge_from_below(bh);
-        printf("coalesced above block\n");
+        // now that we've this block with the one above, we need to use bh of newly coalesced block.
+        bh = merge_from_below(bh);
+        printf("Coalesced above block\n");
     } else {
-        bh = JMP_TO_NEXT_BH(bh);
+        printf("Did not coalesce above allocated memory\n");
     }
+
+    bh = JMP_TO_NEXT_BH(bh);
+    printf("cur %x\n", bh);
 
     // at this stage, bh will be at bh_end of freed payload. e.g.
     // | bh_start | payload | bh_end | bh_start | ...
     //                      ^  
     //                      bh
 
+    // bh+1 logic is wrong here 
     if (bh + 1 >= tail || (bh+1)->status == ALLOCATED) {
-        printf("no coalesce\n");
+        printf("Did not coalesce below allocated memory\n");
         return;
     }
-    // move ptr into similar position as above code.
+
+    printf("Initiator will merge bh_start at 0x%x\n", bh+1);
+    // point to bh_start of below block, so we can re-use merge_from_below
     bh += 1;
-
-    new_block_size = bh->size + (bh-1)->size;
-
-    bh -= 1;
-    void* ptr = bh;
-
-    // jump to start of new block and clear old block headers
-    ptr -= BLOCK_HEADER_SIZE + GET_PAYLOAD_SIZE(bh);
-    memset(bh, 0, BLOCK_HEADER_SIZE*2);
-
-    // we're now at bh_start of newly coalesced block
-    bh = (block_header_t *)ptr;
-    bh->size = new_block_size; 
-    bh->status = FREE;
-
-    ptr += new_block_size-BLOCK_HEADER_SIZE;
-    bh = ptr;
-
-    // set size of new block header end
-    bh->size = new_block_size; 
-
+    merge_from_below(bh);
     printf("coalesced below block\n");
-    // check if prev block free
-    // if free, 0 out the joining block headers, and then adjust the new bh front and end with the new infomation
-
 }
 
 
@@ -197,11 +173,6 @@ void free(void* ptr) {
     free_block(bh);
 
     allocs -= 1;
-
-    if (allocs == 0) {
-        printf("freeing heap completely.\n");
-        munmap((void*)head, 0x1000);
-    }
 
     coalesce(bh);
 }
@@ -233,11 +204,24 @@ void create_free_list(void* base_address) {
 }
     
 
-void free_list_status_printer(int from, int to) {
+void list_status_logger(int from, int to) {
+
+    printf("<-----------------------------BLOCK------------------------------------------------>\n");
+    block_header_t* bh = head;
+    int n = 0;
+    while (bh->size != 0 && ( n < to )) {
+        printf("\nbh_front\n");
+        printf("Block number: %i\naddress: 0x%x\nbh->size: %i\nbh->status: %i\n", n, bh, bh->size, bh->status);
+        printf("\nbh_end\n");
+        bh = JMP_TO_NEXT_BH(bh);
+        printf("Block number: %i\naddress: 0x%x\nbh->size: %i\nbh->status: %i\n", n, bh, bh->size, bh->status);
+        printf("\n<-----------------------------BLOCK------------------------------------------------>\n");
+        n += 1;
+        bh += 1;
+    }
 }
 
 void init_heap() {
-
     // start addr of block of free memory
     int prot = PROT_READ | PROT_WRITE;
     int flags = MAP_PRIVATE | MAP_ANONYMOUS;
