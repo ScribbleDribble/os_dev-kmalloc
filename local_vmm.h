@@ -68,8 +68,6 @@ void allocate_block(block_header_t* bh) {
     SET_ALLOCATED(bh);
     SET_ALLOCATED(JMP_TO_NEXT_BH(bh));
     void* ptr = bh;
-    printf("status front %i, status back %i\n", bh->status, JMP_TO_NEXT_BH(bh)->status);
-
 }
 
 void free_block(block_header_t* bh) {
@@ -145,20 +143,14 @@ void coalesce(block_header_t* bh) {
     }
 
     bh = JMP_TO_NEXT_BH(bh);
-    printf("cur %x\n", bh);
-
     // at this stage, bh will be at bh_end of freed payload. e.g.
     // | bh_start | payload | bh_end | bh_start | ...
     //                      ^  
     //                      bh
-
-    // bh+1 logic is wrong here 
     if (bh + 1 >= tail || (bh+1)->status == ALLOCATED) {
         printf("Did not coalesce below allocated memory\n");
         return;
     }
-
-    printf("Initiator will merge bh_start at 0x%x\n", bh+1);
     // point to bh_start of below block, so we can re-use merge_from_below
     bh += 1;
     merge_from_below(bh);
@@ -171,7 +163,6 @@ void free(void* ptr) {
     block_header_t* bh = (block_header_t*) (ptr - BLOCK_HEADER_SIZE);
     printf("freeing pointer allocated at 0x%x\n", (uint32_t) ptr);
     free_block(bh);
-
     allocs -= 1;
 
     coalesce(bh);
