@@ -13,8 +13,9 @@ int main(void) {
     char* s3 = (char*) kmalloc(x*sizeof(char));
 
     char* s4 = (char*)kmalloc(x*sizeof(char));
-
-    free(s4);
+    
+    free(s3);
+    // free(s4);
     // s = "hey\0";
     // printf("%i", *get_num2());
     // int* b_ptr = (int*)kmalloc(sizeof(a));

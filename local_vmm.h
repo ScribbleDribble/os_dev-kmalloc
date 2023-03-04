@@ -67,6 +67,9 @@ static block_header_t create_block_header(uint16_t size, bool is_allocated) {
 void allocate_block(block_header_t* bh) {
     SET_ALLOCATED(bh);
     SET_ALLOCATED(JMP_TO_NEXT_BH(bh));
+    void* ptr = bh;
+    printf("status front %i, status back %i\n", bh->status, JMP_TO_NEXT_BH(bh)->status);
+
 }
 
 void free_block(block_header_t* bh) {
@@ -78,20 +81,19 @@ void free_block(block_header_t* bh) {
 
 void* first_fit(uint32_t size){
     void* ptr = (void*) head;
-    block_header_t* bh_ptr = (block_header_t*) head;
+    block_header_t* bh = (block_header_t*) head;
     int i = 0;
-    while (bh_ptr->size != 0) {
-        if (IS_VALID_BLOCK(bh_ptr, size)) {
-            // SET_ALLOCATED(bh_ptr);
-            allocate_block(bh_ptr);
+    while (bh->size != 0) {
+        if (IS_VALID_BLOCK(bh, size)) {
+            allocate_block(bh);
             printf("Allocating memory at address 0x%x\nWithin block %u\nblock size of 0x%x bytes\n------------\n",
-            (uint32_t) ((void*) ptr) + BLOCK_HEADER_SIZE, i, bh_ptr->size);
+            (uint32_t) ((void*) ptr) + BLOCK_HEADER_SIZE, i, bh->size);
             allocs += 1;
             return ((void*) ptr) + BLOCK_HEADER_SIZE; 
         }
 
-        ptr +=  bh_ptr->size;
-        bh_ptr = (block_header_t*) ptr;
+        ptr +=  bh->size;
+        bh = (block_header_t*) ptr;
         i++;
     }
     printf("Unable to allocate memory of size %u\n", size); 
@@ -103,7 +105,38 @@ void* kmalloc(uint32_t size){
     return first_fit(size);
 }
 
-void coalesce(block_header_t* bh_ptr) {
+// merges two blocks. 
+// params - bh: the 2nd front_bh of the two contingous blocks to be merged. 
+void merge_from_below(block_header_t* bh) {
+
+    int new_block_size = bh->size + (bh-1)->size;
+
+    // go up one bh
+    bh -= 1;
+    void* ptr = bh;
+
+    // jump to start of new block and clear old block headers
+    ptr -= BLOCK_HEADER_SIZE + GET_PAYLOAD_SIZE(bh);
+    memset(bh, 0, BLOCK_HEADER_SIZE*2);
+
+    // we're now at the front bh of newly coalesced block
+    bh = (block_header_t *)ptr;
+    bh->size = new_block_size; 
+    bh->status = FREE;
+
+    // jump to second block header of newly coalesced block
+    ptr += new_block_size-BLOCK_HEADER_SIZE;
+    bh = ptr;
+
+    // set new meta
+    bh->size = new_block_size; 
+    bh->status = FREE;
+
+}
+
+// need to understand why we're coalescing an already allocated block i.e. marking the block as unallocated
+
+void coalesce(block_header_t* bh) {
 
     int new_block_size = 0;
 
@@ -111,61 +144,44 @@ void coalesce(block_header_t* bh_ptr) {
     
     //
     // bounds checking
-    if (bh_ptr - 1 > head && (bh_ptr-1)->status == FREE) {
-        new_block_size = bh_ptr->size + (bh_ptr-1)->size;
-
-        bh_ptr -= 1;
-        void* ptr = bh_ptr;
-
-        
-        // jump to start of new block and clear old block headers
-        ptr -= BLOCK_HEADER_SIZE + GET_PAYLOAD_SIZE(bh_ptr);
-        memset(bh_ptr, 0, BLOCK_HEADER_SIZE*2);
-        bh_ptr = (block_header_t *)ptr;
-        *bh_ptr = create_block_header(new_block_size, FREE);
-        
-        ptr += new_block_size-BLOCK_HEADER_SIZE;
-        bh_ptr = ptr;
-
-        // set size of new block header end
-        bh_ptr->size = new_block_size;    
-
+    if (bh - 1 > head && (bh-1)->status == FREE) {
+        merge_from_below(bh);
         printf("coalesced above block\n");
-
+    } else {
+        bh = JMP_TO_NEXT_BH(bh);
     }
 
+    // at this stage, bh will be at bh_end of freed payload. e.g.
     // | bh_start | payload | bh_end | bh_start | ...
-//                          ^  
-//                         here
+    //                      ^  
+    //                      bh
 
-    printf("cur %x | tail %x", bh_ptr, tail);
-    if (bh_ptr + 1 >= tail || (bh_ptr+1)->status != FREE) {
-        printf("no\n");
+    if (bh + 1 >= tail || (bh+1)->status == ALLOCATED) {
+        printf("no coalesce\n");
         return;
     }
-
     // move ptr into similar position as above code.
-    bh_ptr += 1;
+    bh += 1;
 
-    new_block_size = bh_ptr->size + (bh_ptr-1)->size;
+    new_block_size = bh->size + (bh-1)->size;
 
-    bh_ptr -= 1;
-    void* ptr = bh_ptr;
+    bh -= 1;
+    void* ptr = bh;
 
     // jump to start of new block and clear old block headers
-    ptr -= BLOCK_HEADER_SIZE + GET_PAYLOAD_SIZE(bh_ptr);
-    memset(bh_ptr, 0, BLOCK_HEADER_SIZE*2);
+    ptr -= BLOCK_HEADER_SIZE + GET_PAYLOAD_SIZE(bh);
+    memset(bh, 0, BLOCK_HEADER_SIZE*2);
 
     // we're now at bh_start of newly coalesced block
-    bh_ptr = (block_header_t *)ptr;
-    bh_ptr->size = new_block_size; 
-    bh_ptr->status = FREE;
+    bh = (block_header_t *)ptr;
+    bh->size = new_block_size; 
+    bh->status = FREE;
 
     ptr += new_block_size-BLOCK_HEADER_SIZE;
-    bh_ptr = ptr;
+    bh = ptr;
 
     // set size of new block header end
-    bh_ptr->size = new_block_size; 
+    bh->size = new_block_size; 
 
     printf("coalesced below block\n");
     // check if prev block free
