@@ -4,6 +4,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <sys/mman.h>
+#include <stdlib.h>
 
 /*
 
@@ -41,13 +42,13 @@ typedef struct block_header_t {
 #define ALLOCATED 1
 #define FREE 0 
 
+#define GET_PAYLOAD_SIZE(block_header) (block_header->size - BLOCK_HEADER_SIZE * 2)
 #define IS_ALLOCATED(block_header) (block_header->status & ALLOCATED) 
-#define IS_FITTING(block_header, requested_size) (requested_size > block_header->size - 2 * sizeof(block_header))
+#define IS_FITTING(block_header, requested_size) (requested_size < GET_PAYLOAD_SIZE(block_header))
 #define IS_VALID_BLOCK(block_header, requested_size) (!IS_ALLOCATED(block_header) && IS_FITTING(block_header, requested_size))
 
 #define JMP_TO_NEXT_BH(bh) ( (block_header_t*) ( (void*) bh + GET_PAYLOAD_SIZE(bh) + BLOCK_HEADER_SIZE) )
 
-#define GET_PAYLOAD_SIZE(block_header) (block_header->size - BLOCK_HEADER_SIZE * 2)
 #define SET_ALLOCATED(block_header) (block_header->status = ALLOCATED)
 #define SET_FREE(block_header) (block_header->status = FREE)
 
@@ -63,6 +64,30 @@ static block_header_t create_block_header(uint16_t size, bool is_allocated) {
     return bh;
 }
 
+void* create_block(uint32_t size, uint32_t* dest) {
+    if ( ((uint32_t)dest * 8 % 8) != 0) {
+        printf("Error in creating block: requested address to place bh at %i is not 8-bit aligned", (uint32_t) dest);
+        exit(0);
+    }
+
+    block_header_t* bh;
+    block_header_t bh_front = create_block_header(size, FREE);
+    block_header_t bh_end = create_block_header(size, FREE);
+
+    bh = (block_header_t*) dest;
+    *bh = bh_front;
+    
+    bh = JMP_TO_NEXT_BH(bh);
+    *bh = bh_end;
+
+    // set new tail 
+    bh += 1;
+    tail = bh;
+    *tail = create_block_header(0, true);
+
+    return dest;
+
+}
 
 void allocate_block(block_header_t* bh) {
     SET_ALLOCATED(bh);
@@ -106,7 +131,6 @@ void* kmalloc(uint32_t size){
 block_header_t* merge_from_below(block_header_t* bh) {
     block_header_t* new_bh_start;
     int new_block_size = bh->size + (bh-1)->size;
-    printf("new block size: %i\n", new_block_size);
     // go up one bh
     bh -= 1;
     void* ptr = bh;
@@ -161,6 +185,11 @@ void coalesce(block_header_t* bh) {
 void free(void* ptr) {
 
     block_header_t* bh = (block_header_t*) (ptr - BLOCK_HEADER_SIZE);
+
+    if (bh->size == 0) {
+        printf("Not a valid bh\n");
+    }
+
     printf("freeing pointer allocated at 0x%x\n", (uint32_t) ptr);
     free_block(bh);
     allocs -= 1;
@@ -169,6 +198,9 @@ void free(void* ptr) {
 }
 
 
+// create head 
+
+// create tail
 
 void create_free_list(void* base_address) {
     int i;
@@ -176,21 +208,15 @@ void create_free_list(void* base_address) {
     
     head = (block_header_t*) base_address;
     void* ptr = base_address;
+
+
     for (i = 0; i < end-1; i++) {
-        block_header_t bh_front = create_block_header(DEFAULT_BLOCK_SIZE_BYTES, FREE);
-        *(block_header_t*)ptr = bh_front;
-        // advance to where the back block header should be
-        ptr += DEFAULT_PAYLOAD_SIZE_BYTES + sizeof(block_header_t);
-
-        block_header_t bh_back = create_block_header(DEFAULT_BLOCK_SIZE_BYTES, FREE);
-        *(block_header_t*)ptr = bh_back;
-
+        block_header_t* bh = create_block(DEFAULT_BLOCK_SIZE_BYTES, ptr);
+        ptr = JMP_TO_NEXT_BH(bh);
         // advance to where the next front bh should be 
         ptr += sizeof(block_header_t);
-        
     }
-    tail = ptr;
-    *tail = create_block_header(0, true);
+    
 
 }
     
