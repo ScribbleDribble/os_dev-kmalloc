@@ -51,14 +51,16 @@ typedef struct block_header_t {
 
 #define GET_PAYLOAD_SIZE(block_header) (block_header->size - BLOCK_HEADER_SIZE * 2)
 #define IS_ALLOCATED(block_header) (block_header->status & ALLOCATED) 
-#define IS_FITTING(block_header, requested_size) (requested_size < GET_PAYLOAD_SIZE(block_header))
+
+#define EXPECTED_BLOCK_SIZE(requested_size) (requested_size + BLOCK_HEADER_SIZE * 2)
+#define IS_FITTING(block_header, requested_size) (requested_size <= GET_PAYLOAD_SIZE(block_header) && block_header->size - EXPECTED_BLOCK_SIZE(requested_size) >= MIN_BLOCK_SIZE)
+
 #define IS_VALID_BLOCK(block_header, requested_size) (!IS_ALLOCATED(block_header) && IS_FITTING(block_header, requested_size))
 
 #define JMP_TO_NEXT_BH(bh) ( (block_header_t*) ( (void*) bh + GET_PAYLOAD_SIZE(bh) + BLOCK_HEADER_SIZE) )
 
 #define SET_ALLOCATED(block_header) (block_header->status = ALLOCATED)
 #define SET_FREE(block_header) (block_header->status = FREE)
-#define SET_SIZE(block_header, size) (block_header->size = size)
 
 static block_header_t* head = NULL;
 static block_header_t* tail = NULL;
@@ -102,6 +104,7 @@ void init_heap() {
 
 
 block_header_t* create_block(uint32_t requested_size, void* dest) {
+
     int revised_size = requested_size + 2*BLOCK_HEADER_SIZE;
     block_header_t* bh;
     block_header_t bh_front = create_block_header(revised_size, FREE);
@@ -135,23 +138,15 @@ void free_block(block_header_t* bh) {
 
 void* split_block(block_header_t* free_bh, uint32_t requested_size) {
     uint32_t prev_free_space = free_bh->size;
-    
+
     block_header_t* to_alloc_bh = create_block(requested_size, free_bh);
     allocate_block(to_alloc_bh, requested_size);
     
     // to_alloc_bh size will account for header size . use the remaining space 
     void* new_free_bh = ((void*) to_alloc_bh) + to_alloc_bh->size;
     int remaining_space = prev_free_space-to_alloc_bh->size;
-
-    printf("remaining space: %#x\n", remaining_space);
-    if (remaining_space < MIN_BLOCK_SIZE){
-        if (remaining_space + new_free_bh == (void*) tail){
-            tail = new_free_bh;
-            *tail = create_block_header(0, ALLOCATED);
-        }
-        return;
-    }
-    create_block(prev_free_space-to_alloc_bh->size - BLOCK_HEADER_SIZE*2, new_free_bh);
+    printf("remaining space: %u\n", remaining_space);
+    create_block(remaining_space - BLOCK_HEADER_SIZE*2, new_free_bh);
 
     return to_alloc_bh;
 }
@@ -162,7 +157,6 @@ void* first_fit(uint32_t size){
     int i = 0;
     while (bh->size != 0) {
         if (IS_VALID_BLOCK(bh, size)) {
-            
             // take old free space of block you want to consume 
             // create new block with requested size 
             // if requested size != size of old free space, then create block of size old free space - requested size 
@@ -280,7 +274,6 @@ void list_status_logger(int from, int to) {
     if (head == NULL || tail == NULL) {
         return;
     }
-    printf("head addr: %#x | tail addr %#x\n", (uintptr_t)head, (uintptr_t)tail);
 
     printf("<-----------------------------BLOCK------------------------------------------------>\n");
     block_header_t* bh = head;
@@ -289,6 +282,11 @@ void list_status_logger(int from, int to) {
         printf("\nbh_front\n");
         printf("Block number: %i\naddress: %#x\nbh->size: %i\nbh->status: %i\n", n, (uintptr_t) bh, bh->size, bh->status);
         printf("\nbh_end\n");
+
+        if (n%5 == 0){
+            printf("head addr: %#x | tail addr %#x\n", (uintptr_t)head, (uintptr_t)tail);
+        }
+
         bh = JMP_TO_NEXT_BH(bh);
         printf("Block number: %i\naddress: %#x\nbh->size: %i\nbh->status: %i\n", n, (uintptr_t) bh, bh->size, bh->status);
         printf("\n<-----------------------------BLOCK------------------------------------------------>\n");

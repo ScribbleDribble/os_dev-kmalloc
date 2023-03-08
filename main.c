@@ -4,8 +4,10 @@
 
 int main(void) {
 
-    
-        // char* s4 = (char*) kmalloc(200*sizeof(char));
+    int i;
+    for (i = 0; i < 4000; i++) {
+        kmalloc(sizeof(char));
+    }
 
     // char* s1 = (char*) kmalloc(500*sizeof(char));
     // char* s2 = (char*) kmalloc(500*sizeof(char));
@@ -20,7 +22,7 @@ int main(void) {
     // free(s3);
     // char* s5 = (char*) kmalloc(200*sizeof(char));
 
-    list_status_logger(0, 300);
+    list_status_logger(0, 5000);
 
 
     return 0;
