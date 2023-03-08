@@ -13,17 +13,14 @@
     Block:
 
     ----------------------------- 
-    front block header (4 bytes)                    
+
+    front block header (4 bytes)  
 
     ----------------------------- 
 
             payload 
 
     ----------------------------- 
-    
-    optional padding (to make sure Block is 8-bit aligned in memory)
-
-    ------------------------------
 
      back block header (4 bytes)
     
@@ -92,7 +89,7 @@ static block_header_t* create_free_list(void* base_address) {
     return (block_header_t*) base_address;
 }
     
-void init_heap() {
+static void init_heap() {
     // start addr of block of free memory
     int prot = PROT_READ | PROT_WRITE;
     int flags = MAP_PRIVATE | MAP_ANONYMOUS;
@@ -102,7 +99,7 @@ void init_heap() {
 
 
 
-block_header_t* create_block(uint32_t requested_size, void* dest) {
+static block_header_t* create_block(uint32_t requested_size, void* dest) {
 
     int revised_size = requested_size + 2*BLOCK_HEADER_SIZE;
     block_header_t* bh;
@@ -121,16 +118,13 @@ block_header_t* create_block(uint32_t requested_size, void* dest) {
 }
 
 // removes old tail block and connects blocks from list to newly created list
-void connect_new_free_block(block_header_t* pseudo_head) {
-    
+// pseudo_head: "head" of new list to join. needs to be contigous with tail
+static void connect_new_free_block(block_header_t* pseudo_head) {
     block_header_t* bh = pseudo_head - 2;
 
     int prev_status = bh->status;
     void* ptr = bh;
     ptr -= GET_PAYLOAD_SIZE(bh) + BLOCK_HEADER_SIZE;
-
-    printf("bh_start: %#x, bh_end %#x\n", ptr, bh);
-
     bh = ptr;
     
     int new_size = bh->size + BLOCK_HEADER_SIZE;
@@ -140,10 +134,9 @@ void connect_new_free_block(block_header_t* pseudo_head) {
     bh = ptr;
 
     *bh = create_block_header(new_size, prev_status);
-
 }
 
-void allocate_block(block_header_t* bh, uint32_t requested_size) {
+static void allocate_block(block_header_t* bh, uint32_t requested_size) {
     SET_ALLOCATED(bh);
     bh->size = requested_size + BLOCK_HEADER_SIZE*2;
     // set new size 
@@ -151,13 +144,13 @@ void allocate_block(block_header_t* bh, uint32_t requested_size) {
     void* ptr = bh;
 }
 
-void free_block(block_header_t* bh) {
+static void free_block(block_header_t* bh) {
     SET_FREE(bh);
     memset((void*)bh+BLOCK_HEADER_SIZE, 0, GET_PAYLOAD_SIZE(bh));
     SET_FREE(JMP_TO_NEXT_BH(bh));
 }
 
-void* split_block(block_header_t* free_bh, uint32_t requested_size) {
+static void* split_block(block_header_t* free_bh, uint32_t requested_size) {
     uint32_t prev_free_space = free_bh->size;
 
     block_header_t* to_alloc_bh = create_block(requested_size, free_bh);
@@ -172,18 +165,15 @@ void* split_block(block_header_t* free_bh, uint32_t requested_size) {
     return to_alloc_bh;
 }
 
-void* first_fit(uint32_t size){
+static void* first_fit(uint32_t size){
     void* ptr = (void*) head;
     block_header_t* bh = (block_header_t*) head;
     int i = 0;
     while (bh->size != 0) {
         if (IS_VALID_BLOCK(bh, size)) {
             // take old free space of block you want to consume 
-            // create new block with requested size 
-            // if requested size != size of old free space, then create block of size old free space - requested size 
+            // create new block with requested size and other new block with free space
             block_header_t* allocd_bh = split_block(bh, size); 
-            // create new free block with adjusted space 
-
             printf("Allocating memory at address 0x%x\nWithin block %u\nblock size of 0x%x bytes\n------------\n",
             (uintptr_t) (((void*) allocd_bh) + BLOCK_HEADER_SIZE), i, bh->size);
             allocs += 1;
@@ -199,7 +189,6 @@ void* first_fit(uint32_t size){
     void* addr = (void*) mmap(tail+1, PAGE_SIZE, MMAP_PROT, MMAP_FLAGS, -1, 0);
     bh = create_free_list(addr);
     connect_new_free_block(bh);
-
     coalesce(bh);
     return first_fit(size);
     
@@ -220,7 +209,7 @@ void* kmalloc(uint32_t size){
 // merges two blocks. 
 // params - bh: the 2nd front_bh of the two contingous blocks to be merged.
 // returns new bh_start of coalesced blocks. 
-block_header_t* merge_from_below(block_header_t* bh) {
+static block_header_t* merge_from_below(block_header_t* bh) {
     block_header_t* new_bh_start;
     int new_block_size = bh->size + (bh-1)->size;
     // go up one bh
@@ -247,7 +236,7 @@ block_header_t* merge_from_below(block_header_t* bh) {
 
 }
 
-void coalesce(block_header_t* bh) {
+static void coalesce(block_header_t* bh) {
     printf("Coalescing initiator bh at : 0x%x\n", bh);
     // if the current block that has been free has a prev or next block free, then merge
     if (bh - 1 > head && (bh-1)->status == FREE) {
@@ -289,9 +278,6 @@ void free(void* ptr) {
 
     coalesce(bh);
 }
-
-
-
 
 void list_status_logger(int from, int to) {
     if (head == NULL || tail == NULL) {
