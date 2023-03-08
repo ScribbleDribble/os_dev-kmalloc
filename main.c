@@ -5,7 +5,7 @@
 int main(void) {
 
     int i;
-    for (i = 0; i < 4000; i++) {
+    for (i = 0; i < 454; i++) {
         kmalloc(sizeof(char));
     }
 

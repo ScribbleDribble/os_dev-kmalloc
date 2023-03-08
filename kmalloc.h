@@ -80,7 +80,6 @@ static block_header_t create_block_header(uint16_t size, bool is_allocated) {
 static block_header_t* create_free_list(void* base_address) {
     // returns the entry point to a new free 4kb block of memory 
     int i;
-    head = (block_header_t*) base_address;
     void* ptr = base_address;
 
     // one big free block that holds head and tail.
@@ -90,7 +89,7 @@ static block_header_t* create_free_list(void* base_address) {
     tail = bh+1;
     *tail = create_block_header(0, ALLOCATED);
 
-    return bh;
+    return (block_header_t*) base_address;
 }
     
 void init_heap() {
@@ -98,7 +97,7 @@ void init_heap() {
     int prot = PROT_READ | PROT_WRITE;
     int flags = MAP_PRIVATE | MAP_ANONYMOUS;
     void* addr = (void*) mmap((void*) HEAP_START, PAGE_SIZE, prot, flags, -1, 0);
-    create_free_list(addr);
+    head = create_free_list(addr);
 }
 
 
@@ -121,6 +120,28 @@ block_header_t* create_block(uint32_t requested_size, void* dest) {
 
 }
 
+// removes old tail block and connects blocks from list to newly created list
+void connect_new_free_block(block_header_t* pseudo_head) {
+    
+    block_header_t* bh = pseudo_head - 2;
+
+    int prev_status = bh->status;
+    void* ptr = bh;
+    ptr -= GET_PAYLOAD_SIZE(bh) + BLOCK_HEADER_SIZE;
+
+    printf("bh_start: %#x, bh_end %#x\n", ptr, bh);
+
+    bh = ptr;
+    
+    int new_size = bh->size + BLOCK_HEADER_SIZE;
+    bh->size = new_size;
+
+    ptr += bh->size - BLOCK_HEADER_SIZE;
+    bh = ptr;
+
+    *bh = create_block_header(new_size, prev_status);
+
+}
 
 void allocate_block(block_header_t* bh, uint32_t requested_size) {
     SET_ALLOCATED(bh);
@@ -175,10 +196,12 @@ void* first_fit(uint32_t size){
     }
 
     // allocate additional memory
+    void* addr = (void*) mmap(tail+1, PAGE_SIZE, MMAP_PROT, MMAP_FLAGS, -1, 0);
+    bh = create_free_list(addr);
+    connect_new_free_block(bh);
 
-    // void* addr = (void*) mmap((void*) tail+1, PAGE_SIZE, MMAP_PROT, MMAP_FLAGS, -1, 0);
-    // bh = create_free_list(addr);
-    // coalesce(bh);
+    coalesce(bh);
+    return first_fit(size);
     
 }
 
