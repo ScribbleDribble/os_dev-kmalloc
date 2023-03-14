@@ -222,7 +222,6 @@ static block_header_t* merge_from_below(block_header_t* bh) {
     new_bh_start = (block_header_t*) ptr;
     bh = (block_header_t *)ptr;
     bh->size = new_block_size; 
-    bh->status = FREE;
 
     // jump to second block header of newly coalesced block
     ptr += new_block_size-BLOCK_HEADER_SIZE;
@@ -230,13 +229,12 @@ static block_header_t* merge_from_below(block_header_t* bh) {
 
     // set new meta
     bh->size = new_block_size; 
-    bh->status = FREE;
 
     return new_bh_start;
 
 }
 
-static void coalesce(block_header_t* bh) {
+void coalesce(block_header_t* bh) {
     printf("Coalescing initiator bh at : 0x%x\n", bh);
     // if the current block that has been free has a prev or next block free, then merge
     if (bh - 1 > head && (bh-1)->status == FREE) {
@@ -279,11 +277,53 @@ void free(void* ptr) {
     coalesce(bh);
 }
 
+void* realloc(void* ptr, size_t size) {
+    block_header_t* bh1_start = ptr-BLOCK_HEADER_SIZE;
+    block_header_t* bh1_end = JMP_TO_NEXT_BH(bh1_start);
+
+    block_header_t* bh2_start = bh1_end + 1;
+    block_header_t* bh2_end = JMP_TO_NEXT_BH(bh2_start);
+    int expansion_size = size - GET_PAYLOAD_SIZE(bh1_start);
+
+    
+
+    if (expansion_size < 0) {
+        return ptr;
+    }
+    if (bh2_start->status == FREE && bh2_start->size + bh1_start->size - BLOCK_HEADER_SIZE*4 >= size) {
+        
+        // more consise but leads to interal fragmentation
+        // block_header_t* to_consume_bh = split_block(bh2_start, size-GET_PAYLOAD_SIZE(bh1_start));
+        // merge_from_below(to_consume_bh);
+
+        void* new_bh1_end = (void*) bh1_end + expansion_size;
+        void* bh1_end_vptr = (void*) bh1_end;
+        uint8_t* new_bh2_start = bh1_end_vptr + BLOCK_HEADER_SIZE;
+
+        block_header_t* bh1_end = memcpy(new_bh1_end, bh1_end_vptr, BLOCK_HEADER_SIZE*2); 
+
+        bh2_start = bh1_end + 1;
+
+        *bh2_start = create_block_header(bh2_end->size-expansion_size, bh2_end->status); 
+        bh2_end = JMP_TO_NEXT_BH(bh2_start);
+        bh2_end->size -= expansion_size;
+
+        bh1_start->size += expansion_size;
+        *bh1_end = create_block_header(bh1_start->size, ALLOCATED);
+
+        return ptr;
+    } else {
+        void* new_p = kmalloc(size);
+        memcpy(new_p, ptr, GET_PAYLOAD_SIZE(bh1_start));
+        free(ptr);
+        return new_p;
+    }
+}
+
 void list_status_logger(int from, int to) {
     if (head == NULL || tail == NULL) {
         return;
     }
-
     printf("<-----------------------------BLOCK------------------------------------------------>\n");
     block_header_t* bh = head;
     int n = 0;
