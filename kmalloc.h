@@ -63,6 +63,7 @@ static block_header_t* head = NULL;
 static block_header_t* tail = NULL;
 
 static uint32_t allocs = 0;
+static uint32_t page_allocs = 0;
 
 static block_header_t* create_block(uint32_t requested_size, void* dest);
 
@@ -86,6 +87,7 @@ static block_header_t* create_free_list(void* base_address) {
     tail = bh+1;
     *tail = create_block_header(0, ALLOCATED);
 
+    page_allocs += 1;
     return (block_header_t*) base_address;
 }
     
@@ -202,7 +204,6 @@ void* kmalloc(uint32_t size){
     if (size == 0) {
         return NULL;    
     }
-
     return first_fit(size);
 }
 
@@ -274,7 +275,37 @@ void free(void* ptr) {
     free_block(bh);
     allocs -= 1;
 
+    if (allocs == 0) {
+        munmap(HEAP_START, page_allocs*PAGE_SIZE);
+        return;
+    }
+
     coalesce(bh);
+}
+
+void resize_adjacent_blocks(
+    block_header_t* bh1_start,
+    block_header_t* bh1_end, 
+    block_header_t* bh2_start, 
+    block_header_t* bh2_end, 
+    int expansion_size
+) 
+{
+    void* new_bh1_end = (void*) bh1_end + expansion_size;
+    void* bh1_end_vptr = (void*) bh1_end;
+    uint8_t* new_bh2_start = bh1_end_vptr + BLOCK_HEADER_SIZE;
+
+    bh1_end = memcpy(new_bh1_end, bh1_end_vptr, BLOCK_HEADER_SIZE*2); 
+
+    bh2_start = bh1_end + 1;
+
+    *bh2_start = create_block_header(bh2_end->size-expansion_size, bh2_end->status); 
+    bh2_end = JMP_TO_NEXT_BH(bh2_start);
+    bh2_end->size -= expansion_size;
+
+    bh1_start->size += expansion_size;
+    *bh1_end = create_block_header(bh1_start->size, ALLOCATED);
+
 }
 
 void* realloc(void* ptr, size_t size) {
@@ -285,32 +316,12 @@ void* realloc(void* ptr, size_t size) {
     block_header_t* bh2_end = JMP_TO_NEXT_BH(bh2_start);
     int expansion_size = size - GET_PAYLOAD_SIZE(bh1_start);
 
-    
-
-    if (expansion_size < 0) {
+    if (size <= 0) {
+        free(ptr);
+    } else if (expansion_size == 0 || ptr == NULL) {
         return ptr;
-    }
-    if (bh2_start->status == FREE && bh2_start->size + bh1_start->size - BLOCK_HEADER_SIZE*4 >= size) {
-        
-        // more consise but leads to interal fragmentation
-        // block_header_t* to_consume_bh = split_block(bh2_start, size-GET_PAYLOAD_SIZE(bh1_start));
-        // merge_from_below(to_consume_bh);
-
-        void* new_bh1_end = (void*) bh1_end + expansion_size;
-        void* bh1_end_vptr = (void*) bh1_end;
-        uint8_t* new_bh2_start = bh1_end_vptr + BLOCK_HEADER_SIZE;
-
-        block_header_t* bh1_end = memcpy(new_bh1_end, bh1_end_vptr, BLOCK_HEADER_SIZE*2); 
-
-        bh2_start = bh1_end + 1;
-
-        *bh2_start = create_block_header(bh2_end->size-expansion_size, bh2_end->status); 
-        bh2_end = JMP_TO_NEXT_BH(bh2_start);
-        bh2_end->size -= expansion_size;
-
-        bh1_start->size += expansion_size;
-        *bh1_end = create_block_header(bh1_start->size, ALLOCATED);
-
+    } else if (expansion_size < 0 || bh2_start->status == FREE && bh2_start->size + bh1_start->size - BLOCK_HEADER_SIZE*4 >= size) {
+        resize_adjacent_blocks(bh1_start, bh1_end, bh2_start, bh2_end, expansion_size);
         return ptr;
     } else {
         void* new_p = kmalloc(size);
