@@ -92,14 +92,11 @@ static block_header_t* create_free_list(void* base_address) {
 }
     
 static void init_heap() {
-    // start addr of block of free memory
     int prot = PROT_READ | PROT_WRITE;
     int flags = MAP_PRIVATE | MAP_ANONYMOUS;
     void* addr = (void*) mmap((void*) HEAP_START, PAGE_SIZE, prot, flags, -1, 0);
     head = create_free_list(addr);
 }
-
-
 
 static block_header_t* create_block(uint32_t requested_size, void* dest) {
 
@@ -170,6 +167,7 @@ static void* split_block(block_header_t* free_bh, uint32_t requested_size) {
 static void* first_fit(uint32_t size){
     void* ptr = (void*) head;
     block_header_t* bh = (block_header_t*) head;
+
     int i = 0;
     while (bh->size != 0) {
         if (IS_VALID_BLOCK(bh, size)) {
@@ -267,16 +265,16 @@ void free(void* ptr) {
     block_header_t* bh = (block_header_t*) (ptr - BLOCK_HEADER_SIZE);
 
     if (bh->size == 0) {
-        printf("Not a valid bh\n");
         return;
     }
-
-    printf("freeing pointer allocated at 0x%x\n", (uintptr_t) ptr);
     free_block(bh);
     allocs -= 1;
 
     if (allocs == 0) {
         munmap(HEAP_START, page_allocs*PAGE_SIZE);
+        head = NULL;
+        tail = NULL;
+        page_allocs = 0;
         return;
     }
 
