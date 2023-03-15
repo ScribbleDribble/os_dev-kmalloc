@@ -237,7 +237,7 @@ void resize_adjacent_blocks(
     void* bh1_end_vptr = (void*) bh1_end;
     uint8_t* new_bh2_start = bh1_end_vptr + BLOCK_HEADER_SIZE;
 
-    bh1_end = memcpy(new_bh1_end, bh1_end_vptr, BLOCK_HEADER_SIZE*2); 
+    bh1_end = memory_copy(new_bh1_end, bh1_end_vptr, BLOCK_HEADER_SIZE*2); 
 
     bh2_start = bh1_end + 1;
 
@@ -262,12 +262,12 @@ void* realloc(void* ptr, size_t size) {
         free(ptr);
     } else if (expansion_size == 0 || ptr == NULL) {
         return ptr;
-    } else if (expansion_size < 0 || bh2_start->status == FREE && bh2_start->size + bh1_start->size - BLOCK_HEADER_SIZE*4 >= size) {
+    } else if ((expansion_size < 0 || bh2_start->status == FREE) && bh2_start->size + bh1_start->size - BLOCK_HEADER_SIZE*4 >= size) {
         resize_adjacent_blocks(bh1_start, bh1_end, bh2_start, bh2_end, expansion_size);
         return ptr;
     } else {
         void* new_p = kmalloc(size);
-        memcpy(new_p, ptr, GET_PAYLOAD_SIZE(bh1_start));
+        memory_copy(new_p, ptr, GET_PAYLOAD_SIZE(bh1_start));
         free(ptr);
         return new_p;
     }
