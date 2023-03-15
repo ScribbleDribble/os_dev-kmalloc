@@ -58,6 +58,8 @@ static block_header_t* tail = NULL;
 
 static uint32_t allocs = 0;
 
+void* realloc(void*, uint32_t size);
+
 void* kmalloc(uint32_t size);
 
 void free(void* ptr);

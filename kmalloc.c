@@ -191,11 +191,7 @@ static void* first_fit(uint32_t size){
 
     // allocate additional memory
     void* addr = palloc(KERNEL_PD_INDEX, 1);
-    char buf[32];
-    kputs("creating new 4kb block starting from below address:");
-    // clear_screen();
-    int_to_hex_str((uint32_t) addr, buf, 32);
-    kputs(buf);
+    // kputs(buf);
     bh = create_free_list(addr);
     connect_new_free_block(bh);
     coalesce(bh);
@@ -227,6 +223,54 @@ void free(void* ptr) {
     allocs -= 1;
 
     coalesce(bh);
+}
+
+void resize_adjacent_blocks(
+    block_header_t* bh1_start,
+    block_header_t* bh1_end, 
+    block_header_t* bh2_start, 
+    block_header_t* bh2_end, 
+    int expansion_size
+) 
+{
+    void* new_bh1_end = (void*) bh1_end + expansion_size;
+    void* bh1_end_vptr = (void*) bh1_end;
+    uint8_t* new_bh2_start = bh1_end_vptr + BLOCK_HEADER_SIZE;
+
+    bh1_end = memcpy(new_bh1_end, bh1_end_vptr, BLOCK_HEADER_SIZE*2); 
+
+    bh2_start = bh1_end + 1;
+
+    *bh2_start = create_block_header(bh2_end->size-expansion_size, bh2_end->status); 
+    bh2_end = JMP_TO_NEXT_BH(bh2_start);
+    bh2_end->size -= expansion_size;
+
+    bh1_start->size += expansion_size;
+    *bh1_end = create_block_header(bh1_start->size, ALLOCATED);
+
+}
+
+void* realloc(void* ptr, size_t size) {
+    block_header_t* bh1_start = ptr-BLOCK_HEADER_SIZE;
+    block_header_t* bh1_end = JMP_TO_NEXT_BH(bh1_start);
+
+    block_header_t* bh2_start = bh1_end + 1;
+    block_header_t* bh2_end = JMP_TO_NEXT_BH(bh2_start);
+    int expansion_size = size - GET_PAYLOAD_SIZE(bh1_start);
+
+    if (size <= 0) {
+        free(ptr);
+    } else if (expansion_size == 0 || ptr == NULL) {
+        return ptr;
+    } else if (expansion_size < 0 || bh2_start->status == FREE && bh2_start->size + bh1_start->size - BLOCK_HEADER_SIZE*4 >= size) {
+        resize_adjacent_blocks(bh1_start, bh1_end, bh2_start, bh2_end, expansion_size);
+        return ptr;
+    } else {
+        void* new_p = kmalloc(size);
+        memcpy(new_p, ptr, GET_PAYLOAD_SIZE(bh1_start));
+        free(ptr);
+        return new_p;
+    }
 }
 
 void list_status_logger(int from, int to) {
