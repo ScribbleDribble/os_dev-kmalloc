@@ -53,10 +53,6 @@ typedef struct block_header_t {
 #define SET_ALLOCATED(block_header) (block_header->status = ALLOCATED)
 #define SET_FREE(block_header) (block_header->status = FREE)
 
-static block_header_t* head = NULL;
-static block_header_t* tail = NULL;
-
-static uint32_t allocs = 0;
 
 void* realloc(void*, uint32_t size);
 

@@ -25,6 +25,14 @@
     ------------------------------
 */
 
+
+
+static block_header_t* head = NULL;
+static block_header_t* tail = NULL;
+
+static uint32_t allocs = 0;
+
+
 block_header_t* create_free_list(void*);
 
 static block_header_t create_block_header(uint32_t size, bool is_allocated) {
@@ -262,7 +270,10 @@ void* realloc(void* ptr, size_t size) {
         free(ptr);
     } else if (expansion_size == 0 || ptr == NULL) {
         return ptr;
-    } else if ((expansion_size < 0 || bh2_start->status == FREE) && bh2_start->size + bh1_start->size - BLOCK_HEADER_SIZE*4 >= size) {
+    } else if (
+        expansion_size < 0 || 
+                    (bh2_start->status == FREE && bh2_start->size + bh1_start->size - BLOCK_HEADER_SIZE*4 >= size)
+    ) {
         resize_adjacent_blocks(bh1_start, bh1_end, bh2_start, bh2_end, expansion_size);
         return ptr;
     } else {
@@ -274,14 +285,14 @@ void* realloc(void* ptr, size_t size) {
 }
 
 void list_status_logger(int from, int to) {
-    if (head == -1 || tail == -1) {
+    if (head == NULL || tail == NULL) {
         return;
     }
 
     block_header_t* bh = head;
     int n = 0;
     while (bh->size != 0 && ( n < to)) {
-
+        
         if (n%5 == 0){
         }
 
