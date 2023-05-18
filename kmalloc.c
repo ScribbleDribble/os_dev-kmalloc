@@ -197,6 +197,7 @@ static void* first_fit(uint32_t size){
         i++;
     }
 
+    kputs("[sys]: allocating new 4kb to kernel heap");
     // allocate additional memory
     void* addr = palloc(KERNEL_PD_INDEX, 1);
     // kputs(buf);
@@ -291,15 +292,24 @@ void list_status_logger(int from, int to) {
 
     block_header_t* bh = head;
     int n = 0;
+    uint32_t used_heap_space = 0;
+
     while (bh->size != 0 && ( n < to)) {
-        
         if (n%5 == 0){
+            klog("head addr: %x | tail addr %x", (uintptr_t)head, (uintptr_t)tail);
         }
 
-        bh = JMP_TO_NEXT_BH(bh);
+        klog("bh_front");
+        klog("Block number: %i | address: %x | bh->size: %i | bh->status: %i", n, (uintptr_t) bh, bh->size, bh->status);
+        klog("bh_end");
 
+        bh = JMP_TO_NEXT_BH(bh);
+        klog("Block number: %i | address: %x | bh->size: %i | bh->status: %i", n, (uintptr_t) bh, bh->size, bh->status);
+        klog("<-----------------------------BLOCK------------------------------------------------>");
         n += 1;
         bh += 1;
     }
 }
+
+
 
