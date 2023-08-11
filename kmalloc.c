@@ -45,8 +45,9 @@ static block_header_t create_block_header(uint32_t size, bool is_allocated) {
 
 
 static void init_heap() {
-    void* addr = palloc(KERNEL_HEAP_PD_IDX, 1);
-    head = create_free_list(addr);
+    palloc_result_t palloc_res = palloc(KERNEL_HEAP_PD_IDX, 1);
+    // TODO check if rem allocs > 0
+    head = create_free_list(palloc_res.base_vaddress);
 }
 
 static block_header_t* create_block(uint32_t requested_size, void* dest) {
@@ -199,9 +200,9 @@ static void* first_fit(uint32_t size){
 
     kputs("[sys]: allocating new 4kb to kernel heap");
     // allocate additional memory
-    void* addr = palloc(KERNEL_HEAP_PD_IDX, 1);
+    palloc_result_t res = palloc(KERNEL_HEAP_PD_IDX, 1);
     // kputs(buf);
-    bh = create_free_list(addr);
+    bh = create_free_list(res.base_vaddress);
     connect_new_free_block(bh);
     coalesce(bh);
     return first_fit(size);
